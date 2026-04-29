@@ -10,7 +10,8 @@ body {
 }
 
 button,
-select {
+select,
+input {
   font: inherit;
 }
 
@@ -69,10 +70,12 @@ nav .active {
   gap: 32px;
   align-items: end;
   margin-bottom: 22px;
+  flex-wrap: wrap;
 }
 
 .label {
-  margin: 0 0 8px;
+  display: block;
+  margin: 0 0 10px;
   color: #aaa6bb;
   font-size: 14px;
 }
@@ -97,6 +100,22 @@ nav .active {
   border-color: #6c4cff;
 }
 
+.numberInput {
+  width: 92px;
+  height: 39px;
+  background: #2a2a35;
+  border: 1px solid #373746;
+  border-radius: 10px;
+  color: #dedbea;
+  padding: 8px 12px;
+  outline: none;
+}
+
+.numberInput:focus {
+  border-color: #8f75ff;
+  box-shadow: 0 0 0 3px rgba(143, 117, 255, 0.16);
+}
+
 .patternPanel {
   background: #111118;
   border: 1px solid #242433;
@@ -108,7 +127,6 @@ nav .active {
 .measureLabels,
 .trackRow {
   display: grid;
-  grid-template-columns: 180px repeat(32, 42px);
   gap: 6px;
   align-items: center;
   min-width: max-content;
@@ -123,6 +141,12 @@ nav .active {
   color: #aaa6bb;
   font-size: 13px;
   height: 20px;
+  position: relative;
+}
+
+.stepNumber.barStart {
+  color: white;
+  font-weight: 700;
 }
 
 .trackRow {
@@ -171,14 +195,14 @@ nav .active {
   padding: 0;
   line-height: 1;
   overflow: hidden;
+  position: relative;
 }
 
 .cell span {
-  display: block;
-  width: 100%;
-  height: 100%;
   display: grid;
   place-items: center;
+  width: 100%;
+  height: 100%;
   font-size: 18px;
   line-height: 1;
 }
@@ -190,6 +214,30 @@ nav .active {
 
 .cell.playing {
   outline: 3px solid white;
+}
+
+/* .cell.beatStart::before {
+  content: "";
+  position: absolute;
+  left: -5px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: #4a4858;
+}
+
+.cell.barStart::before {
+  width: 2px;
+  background: #aaa6bb;
+} */
+
+.cell {
+  justify-self: start;
+}
+
+.stepNumber {
+  justify-self: start;
+  width: 42px;
 }
 
 .addRow {
