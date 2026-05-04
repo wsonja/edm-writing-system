@@ -15,6 +15,21 @@ input {
   font: inherit;
 }
 
+button {
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease,
+    box-shadow 160ms ease, transform 160ms ease;
+}
+
+button:not(:disabled):hover {
+  background: #6c4cff;
+  color: white;
+  border-color: #6c4cff;
+}
+
+button:not(:disabled):active {
+  transform: translateY(1px);
+}
+
 .app {
   min-height: 100vh;
   background: #15151f;
@@ -53,12 +68,30 @@ nav .active {
 }
 
 .export {
-  background: #6c4cff;
+  background: #2d2d39;
   color: white;
   border: 0;
   border-radius: 10px;
   padding: 10px 16px;
   font-weight: 700;
+  cursor: pointer;
+}
+
+.export:hover,
+.export:focus-visible {
+  background: #6c4cff;
+}
+
+.exportControls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.exportStatus {
+  color: #dedbea;
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .workspace {
@@ -272,7 +305,8 @@ nav .active {
 
 .transport button,
 .copyTools button,
-.savedVersions button {
+.savedVersions button,
+.notationImport button {
   background: #2d2d39;
   color: white;
   border: 0;
@@ -358,6 +392,38 @@ nav .active {
   margin: 0;
   color: #dedbea;
   overflow-x: auto;
+}
+
+.notationImport {
+  margin-top: 12px;
+  background: #111118;
+  border: 1px solid #242433;
+  border-radius: 16px;
+  padding: 18px;
+}
+
+.notationImport textarea {
+  width: 100%;
+  min-height: 120px;
+  resize: vertical;
+  background: #1f1f2a;
+  border: 1px solid #373746;
+  border-radius: 10px;
+  color: #dedbea;
+  padding: 12px;
+  outline: none;
+}
+
+.notationImport textarea:focus {
+  border-color: #8f75ff;
+  box-shadow: 0 0 0 3px rgba(143, 117, 255, 0.16);
+}
+
+.notationImportActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
 }
 
 .soundCredit {

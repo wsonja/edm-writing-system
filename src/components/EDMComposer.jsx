@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import * as lamejs from "lamejs";
 
 const DEFAULT_BARS = 4;
 const STORAGE_KEY = "edm-composer-state";
@@ -155,7 +156,63 @@ function getSavedVersions() {
   }
 }
 
-function playNoise(ctx, time, duration, volume) {
+function parseNotationToken(token) {
+  const sound = [...SOUND_TYPES]
+    .sort((a, b) => b.symbol.length - a.symbol.length)
+    .find((soundType) => token.startsWith(soundType.symbol));
+
+  if (!sound) return null;
+
+  const rest = token.slice(sound.symbol.length);
+  const pitch = PITCHES.includes(rest[0]) ? rest[0] : "C";
+  const durationText = PITCHES.includes(rest[0]) ? rest.slice(1) : rest;
+  const duration = DURATIONS.includes(durationText) ? durationText : "1";
+
+  return { sound: sound.id, pitch, duration };
+}
+
+function parseNotationText(text, fallbackRows, beatsPerBar) {
+  const lines = text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (!lines.length) return null;
+
+  const boxesPerBar = beatsPerBar * 4;
+  const maxSteps = Math.max(...lines.map((line) => line.split(/\s+/).length));
+  const importBarCount = Math.max(1, Math.ceil(maxSteps / boxesPerBar));
+  const importSteps = getStepCount(importBarCount, beatsPerBar);
+  const importedRows = lines.map((line, rowIndex) => {
+    const firstToken = line
+      .split(/\s+/)
+      .map(parseNotationToken)
+      .find(Boolean);
+
+    return {
+      id: crypto.randomUUID(),
+      sound: firstToken?.sound || fallbackRows[rowIndex]?.sound || "bass",
+    };
+  });
+  const importedGrid = createEmptyGrid(importedRows, importSteps);
+
+  lines.forEach((line, rowIndex) => {
+    line.split(/\s+/).forEach((token, step) => {
+      const parsedToken = parseNotationToken(token);
+
+      if (parsedToken && step < importSteps) {
+        importedGrid[importedRows[rowIndex].id][step] = {
+          pitch: parsedToken.pitch,
+          duration: parsedToken.duration,
+        };
+      }
+    });
+  });
+
+  return { rows: importedRows, grid: importedGrid, barCount: String(importBarCount) };
+}
+
+function playNoise(ctx, time, duration, volume, destination = ctx.destination) {
   const buffer = ctx.createBuffer(1, ctx.sampleRate * duration, ctx.sampleRate);
   const data = buffer.getChannelData(0);
 
@@ -170,7 +227,7 @@ function playNoise(ctx, time, duration, volume) {
   gain.gain.setValueAtTime(volume, time);
   gain.gain.exponentialRampToValueAtTime(0.001, time + duration);
 
-  source.connect(gain).connect(ctx.destination);
+  source.connect(gain).connect(destination);
   source.start(time);
 }
 
@@ -187,6 +244,40 @@ function createReverbImpulse(ctx, duration = 2.2, decay = 2.7) {
   }
 
   return impulse;
+}
+
+function floatToInt16(floatBuffer) {
+  const int16Buffer = new Int16Array(floatBuffer.length);
+
+  for (let i = 0; i < floatBuffer.length; i++) {
+    const sample = Math.max(-1, Math.min(1, floatBuffer[i]));
+    int16Buffer[i] = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
+  }
+
+  return int16Buffer;
+}
+
+function audioBufferToMp3(audioBuffer) {
+  const channelCount = Math.min(2, audioBuffer.numberOfChannels);
+  const left = floatToInt16(audioBuffer.getChannelData(0));
+  const right =
+    channelCount > 1 ? floatToInt16(audioBuffer.getChannelData(1)) : left;
+  const encoder = new lamejs.Mp3Encoder(2, audioBuffer.sampleRate, 192);
+  const chunks = [];
+  const blockSize = 1152;
+
+  for (let i = 0; i < left.length; i += blockSize) {
+    const leftChunk = left.subarray(i, i + blockSize);
+    const rightChunk = right.subarray(i, i + blockSize);
+    const encoded = encoder.encodeBuffer(leftChunk, rightChunk);
+
+    if (encoded.length) chunks.push(encoded);
+  }
+
+  const flushed = encoder.flush();
+  if (flushed.length) chunks.push(flushed);
+
+  return new Blob(chunks, { type: "audio/mpeg" });
 }
 
 export default function EDMComposer() {
@@ -208,6 +299,9 @@ export default function EDMComposer() {
   const [pasteStartBar, setPasteStartBar] = useState("5");
   const [savedVersions, setSavedVersions] = useState(getSavedVersions);
   const [saveStatus, setSaveStatus] = useState("");
+  const [notationImport, setNotationImport] = useState("");
+  const [importStatus, setImportStatus] = useState("");
+  const [exportStatus, setExportStatus] = useState("");
   const audioContext = useRef(null);
   const sampleCache = useRef({});
   const scheduledSources = useRef([]);
@@ -443,6 +537,70 @@ export default function EDMComposer() {
     timers.current.push(setTimeout(() => setSaveStatus(""), 1600));
   }
 
+  function importNotation() {
+    const importedNotation = parseNotationText(notationImport, rows, beatsPerBar);
+
+    if (!importedNotation) {
+      setImportStatus("Paste notation first");
+      timers.current.push(setTimeout(() => setImportStatus(""), 1400));
+      return;
+    }
+
+    stop();
+    setRows(importedNotation.rows);
+    setGrid(importedNotation.grid);
+    setBarCount(importedNotation.barCount);
+    setImportStatus("Imported");
+    timers.current.push(setTimeout(() => setImportStatus(""), 1400));
+  }
+
+  function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function exportTxt() {
+    const blob = new Blob([notation], { type: "text/plain;charset=utf-8" });
+
+    downloadBlob(blob, "edm-notation.txt");
+    setExportStatus("TXT exported");
+    timers.current.push(setTimeout(() => setExportStatus(""), 1400));
+  }
+
+  async function exportMp3() {
+    const sampleRate = 44100;
+    const renderDuration = totalSteps * stepTime + 3;
+    const offlineCtx = new OfflineAudioContext(
+      2,
+      Math.ceil(sampleRate * renderDuration),
+      sampleRate
+    );
+    const now = 0.08;
+
+    setExportStatus("Rendering MP3...");
+    await loadUsedSamples(offlineCtx);
+
+    for (let step = 0; step < totalSteps; step++) {
+      const time = now + step * stepTime;
+
+      rows.forEach((row) => {
+        playCell(offlineCtx, row.sound, grid[row.id][step], time);
+      });
+    }
+
+    const renderedBuffer = await offlineCtx.startRendering();
+    const mp3Blob = audioBufferToMp3(renderedBuffer);
+
+    downloadBlob(mp3Blob, "edm-arrangement.mp3");
+    setExportStatus("MP3 exported");
+    timers.current.push(setTimeout(() => setExportStatus(""), 1800));
+  }
+
   function getBarRange(startBarText, barCountText) {
     const startBar = Number(startBarText);
     const rangeBars = Number(barCountText);
@@ -591,7 +749,7 @@ export default function EDMComposer() {
     await Promise.all([...usedSampleIds].map((soundId) => loadSample(ctx, soundId)));
   }
 
-  function playKick(ctx, time, heavy = false) {
+  function playKick(ctx, time, heavy = false, destination = ctx.destination) {
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
 
@@ -602,7 +760,7 @@ export default function EDMComposer() {
     gain.gain.setValueAtTime(heavy ? 0.8 : 0.6, time);
     gain.gain.exponentialRampToValueAtTime(0.001, time + (heavy ? 0.45 : 0.25));
 
-    osc.connect(gain).connect(ctx.destination);
+    osc.connect(gain).connect(destination);
     osc.start(time);
     osc.stop(time + 0.5);
   }
@@ -614,7 +772,8 @@ export default function EDMComposer() {
     duration,
     type,
     volume,
-    release = 0.05
+    release = 0.05,
+    destination = ctx.destination
   ) {
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
@@ -626,12 +785,12 @@ export default function EDMComposer() {
     gain.gain.exponentialRampToValueAtTime(volume, time + 0.01);
     gain.gain.exponentialRampToValueAtTime(0.001, time + duration + release);
 
-    osc.connect(gain).connect(ctx.destination);
+    osc.connect(gain).connect(destination);
     osc.start(time);
     osc.stop(time + duration + release);
   }
 
-  function playSynthLead(ctx, time, freq, duration) {
+  function playSynthLead(ctx, time, freq, duration, destination = ctx.destination) {
     const dry = ctx.createGain();
     const wet = ctx.createGain();
     const delay = ctx.createDelay(1);
@@ -660,10 +819,10 @@ export default function EDMComposer() {
     feedback.gain.setValueAtTime(0.32, time);
     reverb.buffer = createReverbImpulse(ctx);
 
-    filter.connect(dry).connect(ctx.destination);
+    filter.connect(dry).connect(destination);
     filter.connect(delay);
     delay.connect(feedback).connect(delay);
-    delay.connect(reverb).connect(wet).connect(ctx.destination);
+    delay.connect(reverb).connect(wet).connect(destination);
 
     voices.forEach((voice) => {
       const osc = ctx.createOscillator();
@@ -680,7 +839,14 @@ export default function EDMComposer() {
     });
   }
 
-  function playSample(ctx, soundId, time, volume = 0.8, playbackRate = 1) {
+  function playSample(
+    ctx,
+    soundId,
+    time,
+    volume = 0.8,
+    playbackRate = 1,
+    destination = ctx.destination
+  ) {
     const buffer = sampleCache.current[soundId];
     if (!buffer) return false;
 
@@ -691,7 +857,7 @@ export default function EDMComposer() {
     source.playbackRate.setValueAtTime(playbackRate, time);
     gain.gain.setValueAtTime(volume, time);
 
-    source.connect(gain).connect(ctx.destination);
+    source.connect(gain).connect(destination);
     source.start(time);
     scheduledSources.current.push(source);
 
@@ -704,7 +870,7 @@ export default function EDMComposer() {
     return true;
   }
 
-  function playCell(ctx, soundId, cell, time) {
+  function playCell(ctx, soundId, cell, time, destination = ctx.destination) {
     if (!cell) return;
 
     const duration = getDurationSteps(cell) * stepTime;
@@ -712,28 +878,43 @@ export default function EDMComposer() {
 
     if (
       soundId === "bass" &&
-      playSample(ctx, soundId, time, 0.8, freq / BASS_SAMPLE_ROOT_FREQ)
+      playSample(ctx, soundId, time, 0.8, freq / BASS_SAMPLE_ROOT_FREQ, destination)
     ) {
       return;
     }
 
-    if (SAMPLE_URLS[soundId] && playSample(ctx, soundId, time)) return;
+    if (SAMPLE_URLS[soundId] && playSample(ctx, soundId, time, 0.8, 1, destination)) {
+      return;
+    }
 
-    if (soundId === "kick") playKick(ctx, time);
-    if (soundId === "808") playKick(ctx, time, true);
-    if (soundId === "snare") playNoise(ctx, time, 0.12, 0.35);
-    if (soundId === "hihat") playNoise(ctx, time, 0.04, 0.12);
-    if (soundId === "openhat") playNoise(ctx, time, 0.22, 0.14);
-    if (soundId === "bass") playTone(ctx, time, freq / 2, duration, "square", 0.25);
-    if (soundId === "lead") playSynthLead(ctx, time, freq / 2, duration);
-    if (soundId === "pad") playTone(ctx, time, freq, duration * 2, "sine", 0.12);
+    if (soundId === "kick") playKick(ctx, time, false, destination);
+    if (soundId === "808") playKick(ctx, time, true, destination);
+    if (soundId === "snare") playNoise(ctx, time, 0.12, 0.35, destination);
+    if (soundId === "hihat") playNoise(ctx, time, 0.04, 0.12, destination);
+    if (soundId === "openhat") playNoise(ctx, time, 0.22, 0.14, destination);
+    if (soundId === "bass") {
+      playTone(ctx, time, freq / 2, duration, "square", 0.25, 0.05, destination);
+    }
+    if (soundId === "lead") playSynthLead(ctx, time, freq / 2, duration, destination);
+    if (soundId === "pad") {
+      playTone(ctx, time, freq, duration * 2, "sine", 0.12, 0.05, destination);
+    }
     if (soundId === "chord") {
-      playTone(ctx, time, freq, duration, "triangle", 0.12);
-      playTone(ctx, time, freq * 1.25, duration, "triangle", 0.09);
-      playTone(ctx, time, freq * 1.5, duration, "triangle", 0.08);
+      playTone(ctx, time, freq, duration, "triangle", 0.12, 0.05, destination);
+      playTone(ctx, time, freq * 1.25, duration, "triangle", 0.09, 0.05, destination);
+      playTone(ctx, time, freq * 1.5, duration, "triangle", 0.08, 0.05, destination);
     }
     if (soundId === "arp") {
-      playTone(ctx, time, freq, Math.min(duration, 0.12), "square", 0.12);
+      playTone(
+        ctx,
+        time,
+        freq,
+        Math.min(duration, 0.12),
+        "square",
+        0.12,
+        0.05,
+        destination
+      );
     }
   }
 
@@ -778,8 +959,16 @@ export default function EDMComposer() {
           <span>Piano Roll</span>
           <span>Effects</span>
         </nav> */}
-          <div className="spacer" style={{ flex: "1" }}/>
-        <button className="export">Export</button>
+        <div className="spacer" style={{ flex: "1" }} />
+        <div className="exportControls">
+          <button className="export" onClick={exportMp3}>
+            Export Audio
+          </button>
+          <button className="export" onClick={exportTxt}>
+            Export Notation
+          </button>
+          {exportStatus ? <span className="exportStatus">{exportStatus}</span> : null}
+        </div>
       </header>
 
       <main className="workspace">
@@ -1025,6 +1214,23 @@ export default function EDMComposer() {
         <section className="notation">
           <p className="label">Notation Export</p>
           <pre>{notation}</pre>
+        </section>
+
+        <section className="notationImport">
+          <label className="label" htmlFor="notationImport">
+            Notation Import
+          </label>
+          <textarea
+            id="notationImport"
+            value={notationImport}
+            onChange={(e) => setNotationImport(e.target.value)}
+          />
+          <div className="notationImportActions">
+            <button onClick={importNotation}>Load Notation</button>
+            {importStatus ? (
+              <span className="transportStatus">{importStatus}</span>
+            ) : null}
+          </div>
         </section>
 
         <p className="soundCredit">
