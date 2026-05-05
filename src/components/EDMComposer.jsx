@@ -171,6 +171,121 @@ function parseNotationToken(token) {
   return { sound: sound.id, pitch, duration };
 }
 
+function getRepeatSuffix(text, index) {
+  if (text[index] !== "x") return { count: 1, nextIndex: index };
+
+  let cursor = index + 1;
+  let digits = "";
+
+  while (/\d/.test(text[cursor])) {
+    digits += text[cursor];
+    cursor++;
+  }
+
+  return {
+    count: digits ? Math.max(1, Number(digits)) : 1,
+    nextIndex: digits ? cursor : index,
+  };
+}
+
+function expandNotationLine(line) {
+  const expandedTokens = [];
+  let cursor = 0;
+
+  while (cursor < line.length) {
+    if (/\s/.test(line[cursor])) {
+      cursor++;
+      continue;
+    }
+
+    if (line[cursor] === "[") {
+      let depth = 1;
+      let groupEnd = cursor + 1;
+
+      while (groupEnd < line.length && depth > 0) {
+        if (line[groupEnd] === "[") depth++;
+        if (line[groupEnd] === "]") depth--;
+        groupEnd++;
+      }
+
+      if (depth === 0) {
+        const groupText = line.slice(cursor + 1, groupEnd - 1);
+        const repeat = getRepeatSuffix(line, groupEnd);
+        const groupTokens = expandNotationLine(groupText);
+
+        for (let i = 0; i < repeat.count; i++) {
+          expandedTokens.push(...groupTokens);
+        }
+
+        cursor = repeat.nextIndex;
+        continue;
+      }
+    }
+
+    let tokenEnd = cursor;
+    while (tokenEnd < line.length && !/\s|\[|\]/.test(line[tokenEnd])) {
+      tokenEnd++;
+    }
+
+    const tokenWithRepeat = line.slice(cursor, tokenEnd);
+    const repeatMatch = tokenWithRepeat.match(/^(.*)x(\d+)$/);
+    const token = repeatMatch ? repeatMatch[1] : tokenWithRepeat;
+    const repeatCount = repeatMatch ? Math.max(1, Number(repeatMatch[2])) : 1;
+
+    for (let i = 0; i < repeatCount; i++) {
+      expandedTokens.push(token);
+    }
+
+    cursor = tokenEnd;
+  }
+
+  return expandedTokens;
+}
+
+function compressTokenRuns(tokens) {
+  const compressedTokens = [];
+
+  for (let i = 0; i < tokens.length; i++) {
+    let repeatCount = 1;
+
+    while (tokens[i + repeatCount] === tokens[i]) {
+      repeatCount++;
+    }
+
+    compressedTokens.push(
+      repeatCount > 1 ? `${tokens[i]}x${repeatCount}` : tokens[i]
+    );
+    i += repeatCount - 1;
+  }
+
+  return compressedTokens;
+}
+
+function formatCompressedBars(barTokenGroups) {
+  const formattedGroups = [];
+
+  for (let i = 0; i < barTokenGroups.length; i++) {
+    let repeatCount = 1;
+    const currentBarKey = barTokenGroups[i].join(" ");
+
+    while (
+      i + repeatCount < barTokenGroups.length &&
+      barTokenGroups[i + repeatCount].join(" ") === currentBarKey
+    ) {
+      repeatCount++;
+    }
+
+    const compressedBar = compressTokenRuns(barTokenGroups[i]).join(" ");
+
+    formattedGroups.push(
+      repeatCount > 1 ? `[${compressedBar}]x${repeatCount}` : compressedBar
+    );
+    i += repeatCount - 1;
+  }
+
+  return formattedGroups.join(" ");
+}
+
 function parseNotationText(text, fallbackRows, beatsPerBar) {
   const lines = text
     .split("\n")
@@ -179,13 +294,13 @@ function parseNotationText(text, fallbackRows, beatsPerBar) {
 
   if (!lines.length) return null;
 
+  const expandedLines = lines.map(expandNotationLine);
   const boxesPerBar = beatsPerBar * 4;
-  const maxSteps = Math.max(...lines.map((line) => line.split(/\s+/).length));
+  const maxSteps = Math.max(...expandedLines.map((tokens) => tokens.length));
   const importBarCount = Math.max(1, Math.ceil(maxSteps / boxesPerBar));
   const importSteps = getStepCount(importBarCount, beatsPerBar);
-  const importedRows = lines.map((line, rowIndex) => {
-    const firstToken = line
-      .split(/\s+/)
+  const importedRows = expandedLines.map((tokens, rowIndex) => {
+    const firstToken = tokens
       .map(parseNotationToken)
       .find(Boolean);
 
@@ -196,8 +311,8 @@ function parseNotationText(text, fallbackRows, beatsPerBar) {
   });
   const importedGrid = createEmptyGrid(importedRows, importSteps);
 
-  lines.forEach((line, rowIndex) => {
-    line.split(/\s+/).forEach((token, step) => {
+  expandedLines.forEach((tokens, rowIndex) => {
+    tokens.forEach((token, step) => {
       const parsedToken = parseNotationToken(token);
 
       if (parsedToken && step < importSteps) {
@@ -380,15 +495,14 @@ export default function EDMComposer() {
     return rows
       .map((row) => {
         const sound = getSound(row.sound);
+        const activeBarTokens = activeBars.flatMap((isActiveBar, barIndex) => {
+          if (!isActiveBar) return [];
 
-        return activeBars
-          .flatMap((isActiveBar, barIndex) => {
-            if (!isActiveBar) return [];
+          const startStep = barIndex * boxesPerBar;
+          const endStep = startStep + boxesPerBar;
 
-            const startStep = barIndex * boxesPerBar;
-            const endStep = startStep + boxesPerBar;
-
-            return grid[row.id].slice(startStep, endStep).map((cell, offset) => {
+          return [
+            grid[row.id].slice(startStep, endStep).map((cell, offset) => {
               const step = startStep + offset;
 
               if (cell) {
@@ -398,9 +512,11 @@ export default function EDMComposer() {
               }
 
               return getHeldCellStart(grid[row.id], step) === null ? "·" : "-";
-            });
-          })
-          .join(" ");
+            }),
+          ];
+        });
+
+        return formatCompressedBars(activeBarTokens);
       })
       .join("\n");
   }, [rows, grid, playbackBarCount, boxesPerBar]);
