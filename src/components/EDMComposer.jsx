@@ -5,6 +5,7 @@ const DEFAULT_BARS = 4;
 const STORAGE_KEY = "edm-composer-state";
 const SAVED_VERSIONS_KEY = "edm-composer-saved-versions";
 const CLIPBOARD_TYPE = "edm-composer-pattern";
+const REPEAT_SYMBOL = "⟲";
 
 const SOUND_TYPES = [
   { id: "kick", label: "Kick", symbol: "●" },
@@ -172,7 +173,9 @@ function parseNotationToken(token) {
 }
 
 function getRepeatSuffix(text, index) {
-  if (text[index] !== "x") return { count: 1, nextIndex: index };
+  if (text[index] !== "x" && text[index] !== REPEAT_SYMBOL) {
+    return { count: 1, nextIndex: index };
+  }
 
   let cursor = index + 1;
   let digits = "";
@@ -228,7 +231,7 @@ function expandNotationLine(line) {
     }
 
     const tokenWithRepeat = line.slice(cursor, tokenEnd);
-    const repeatMatch = tokenWithRepeat.match(/^(.*)x(\d+)$/);
+    const repeatMatch = tokenWithRepeat.match(/^(.*?)(?:x|⟲)(\d+)$/);
     const token = repeatMatch ? repeatMatch[1] : tokenWithRepeat;
     const repeatCount = repeatMatch ? Math.max(1, Number(repeatMatch[2])) : 1;
 
@@ -253,7 +256,7 @@ function compressTokenRuns(tokens) {
     }
 
     compressedTokens.push(
-      repeatCount > 1 ? `${tokens[i]}x${repeatCount}` : tokens[i]
+      repeatCount > 1 ? `${tokens[i]}${REPEAT_SYMBOL}${repeatCount}` : tokens[i]
     );
     i += repeatCount - 1;
   }
@@ -278,7 +281,9 @@ function formatCompressedBars(barTokenGroups) {
     const compressedBar = compressTokenRuns(barTokenGroups[i]).join(" ");
 
     formattedGroups.push(
-      repeatCount > 1 ? `[${compressedBar}]x${repeatCount}` : compressedBar
+      repeatCount > 1
+        ? `[${compressedBar}]${REPEAT_SYMBOL}${repeatCount}`
+        : compressedBar
     );
     i += repeatCount - 1;
   }
