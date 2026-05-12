@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { BookOpen, Check, Copy } from "lucide-react";
+import { BookOpen, Check, Copy, Menu, X } from "lucide-react";
 import * as lamejs from "lamejs";
 import LanguageGuide from "./LanguageGuide.jsx";
 
@@ -426,6 +426,7 @@ export default function EDMComposer() {
   const [exportStatus, setExportStatus] = useState("");
   const [notationCopyStatus, setNotationCopyStatus] = useState("");
   const [showLanguageGuide, setShowLanguageGuide] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const audioContext = useRef(null);
   const sampleCache = useRef({});
   const scheduledSources = useRef([]);
@@ -1090,21 +1091,55 @@ export default function EDMComposer() {
           <span>Piano Roll</span>
           <span>Effects</span>
         </nav> */}
-        <div className="spacer" style={{ flex: "1" }} />
-        <div className="exportControls">
+        <div className="topbarSpacer" />
+        <button
+          className="mobileMenuToggle"
+          type="button"
+          aria-label={mobileMenuOpen ? "Close studio menu" : "Open studio menu"}
+          aria-expanded={mobileMenuOpen}
+          aria-controls="studio-header-actions"
+          onClick={() => setMobileMenuOpen((current) => !current)}
+        >
+          {mobileMenuOpen ? (
+            <X size={22} aria-hidden="true" />
+          ) : (
+            <Menu size={22} aria-hidden="true" />
+          )}
+        </button>
+        <div
+          className={`exportControls${mobileMenuOpen ? " menuOpen" : ""}`}
+          id="studio-header-actions"
+        >
           <button
             className="export alphabetExport"
             type="button"
             aria-label="Open alphabet guide"
-            onClick={() => setShowLanguageGuide(true)}
+            onClick={() => {
+              setShowLanguageGuide(true);
+              setMobileMenuOpen(false);
+            }}
           >
             <BookOpen size={18} aria-hidden="true" />
             Alphabet
           </button>
-          <button className="export" onClick={exportMp3}>
+          <button
+            className="export"
+            type="button"
+            onClick={() => {
+              exportMp3();
+              setMobileMenuOpen(false);
+            }}
+          >
             Export Audio
           </button>
-          <button className="export" onClick={exportTxt}>
+          <button
+            className="export"
+            type="button"
+            onClick={() => {
+              exportTxt();
+              setMobileMenuOpen(false);
+            }}
+          >
             Export Notation
           </button>
           {exportStatus ? <span className="exportStatus">{exportStatus}</span> : null}

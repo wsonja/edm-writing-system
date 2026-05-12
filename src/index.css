@@ -53,11 +53,18 @@ button:not(:disabled):active {
   padding: 0 24px;
   gap: 32px;
   border-bottom: 1px solid #2a2a36;
+  position: relative;
+  z-index: 20;
 }
 
 .brand {
   font-weight: 700;
   font-size: 18px;
+  white-space: nowrap;
+}
+
+.topbarSpacer {
+  flex: 1;
 }
 
 nav {
@@ -104,6 +111,19 @@ nav .active {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.mobileMenuToggle {
+  width: 42px;
+  height: 42px;
+  display: none;
+  place-items: center;
+  background: #2d2d39;
+  color: white;
+  border: 1px solid #373746;
+  border-radius: 10px;
+  padding: 0;
+  cursor: pointer;
 }
 
 .exportStatus {
@@ -1173,6 +1193,59 @@ nav .active {
 @media (max-width: 760px) {
   body:has(.landingPage) {
     overflow: auto;
+  }
+
+  .topbar {
+    height: 60px;
+    padding: 0 14px;
+    gap: 10px;
+  }
+
+  .brand {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: clamp(15px, 4.2vw, 18px);
+  }
+
+  .mobileMenuToggle {
+    display: grid;
+    flex: 0 0 auto;
+  }
+
+  .exportControls {
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    top: calc(100% + 8px);
+    display: none;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 10px;
+    background: #1f1f2a;
+    border: 1px solid #373746;
+    border-radius: 12px;
+    box-shadow: 0 18px 38px rgba(0, 0, 0, 0.28);
+  }
+
+  .exportControls.menuOpen {
+    display: flex;
+  }
+
+  .exportControls .export {
+    width: 100%;
+    min-height: 44px;
+    justify-content: center;
+  }
+
+  .exportStatus {
+    text-align: center;
+    white-space: normal;
+  }
+
+  .workspace {
+    padding: 18px 12px 24px;
   }
 
   .landingContent {
