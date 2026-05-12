@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { BookOpen, Check, Copy } from "lucide-react";
 import * as lamejs from "lamejs";
+import LanguageGuide from "./LanguageGuide.jsx";
 
 const DEFAULT_BARS = 4;
 const STORAGE_KEY = "edm-composer-state";
@@ -422,6 +424,8 @@ export default function EDMComposer() {
   const [notationImport, setNotationImport] = useState("");
   const [importStatus, setImportStatus] = useState("");
   const [exportStatus, setExportStatus] = useState("");
+  const [notationCopyStatus, setNotationCopyStatus] = useState("");
+  const [showLanguageGuide, setShowLanguageGuide] = useState(false);
   const audioContext = useRef(null);
   const sampleCache = useRef({});
   const scheduledSources = useRef([]);
@@ -691,6 +695,12 @@ export default function EDMComposer() {
     downloadBlob(blob, "edm-notation.txt");
     setExportStatus("TXT exported");
     timers.current.push(setTimeout(() => setExportStatus(""), 1400));
+  }
+
+  async function copyNotationExport() {
+    await navigator.clipboard?.writeText(notation);
+    setNotationCopyStatus("Copied");
+    timers.current.push(setTimeout(() => setNotationCopyStatus(""), 1400));
   }
 
   async function exportMp3() {
@@ -1082,6 +1092,15 @@ export default function EDMComposer() {
         </nav> */}
         <div className="spacer" style={{ flex: "1" }} />
         <div className="exportControls">
+          <button
+            className="export alphabetExport"
+            type="button"
+            aria-label="Open alphabet guide"
+            onClick={() => setShowLanguageGuide(true)}
+          >
+            <BookOpen size={18} aria-hidden="true" />
+            Alphabet
+          </button>
           <button className="export" onClick={exportMp3}>
             Export Audio
           </button>
@@ -1091,6 +1110,9 @@ export default function EDMComposer() {
           {exportStatus ? <span className="exportStatus">{exportStatus}</span> : null}
         </div>
       </header>
+      {showLanguageGuide ? (
+        <LanguageGuide onClose={() => setShowLanguageGuide(false)} />
+      ) : null}
 
       <main className="workspace">
         <section className="controls">
@@ -1334,7 +1356,25 @@ export default function EDMComposer() {
 
         <section className="notation">
           <p className="label">Notation Export</p>
-          <pre>{notation}</pre>
+          <div className="codeBox">
+            <div className="codeBoxHeader">
+              <span>Current pattern</span>
+              <button
+                className="copyCodeButton"
+                type="button"
+                aria-label="Copy notation export"
+                onClick={copyNotationExport}
+              >
+                {notationCopyStatus ? (
+                  <Check size={15} aria-hidden="true" />
+                ) : (
+                  <Copy size={15} aria-hidden="true" />
+                )}
+                {notationCopyStatus || "Copy"}
+              </button>
+            </div>
+            <pre>{notation}</pre>
+          </div>
         </section>
 
         <section className="notationImport">
